@@ -15,7 +15,7 @@ class WeatherViewModel(activity: MainActivity) : ViewModel() {
 
     private val weatherApi = RetrofitInstance.weatherApi
     private val _weatherResult = MutableLiveData<NetworkResponse<WeatherModel>>()
-    private val weatherResult: LiveData<NetworkResponse<WeatherModel>> = _weatherResult
+    val weatherResult: LiveData<NetworkResponse<WeatherModel>> = _weatherResult
     fun getData(city: String) {
         _weatherResult.value = NetworkResponse.Loading
         viewModelScope.launch {
