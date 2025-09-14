@@ -1,5 +1,8 @@
 package com.example.realtimeweather
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,8 +21,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,12 +40,37 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.realtimeweather.api.NetworkResponse
 import com.example.realtimeweather.api.WeatherModel
+import com.example.realtimeweather.unit.hasLocationPermission
 
 @Composable
 fun WeatherPage(viewModel: WeatherViewModel) {
     var city by remember { mutableStateOf("") }
     val weatherResult = viewModel.weatherResult.observeAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
+
+    // State để quản lý trạng thái loading và lỗi của location
+    var isLoadingLocation by remember { mutableStateOf(false) }
+    var locationError by remember { mutableStateOf<String?>(null) }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        ) {
+
+            getLocationAfterPermission(
+                context, isLoadingLocation, locationError,
+                onLoadingChange = { isLoadingLocation = it },
+                onErrorChange = { locationError = it },
+                onCityChange = { city = it },
+                viewModel = viewModel
+            )
+        } else {
+            isLoadingLocation = false
+            locationError = "Location permission denied"
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -51,30 +80,67 @@ fun WeatherPage(viewModel: WeatherViewModel) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp)
-                .weight(1f),
+                .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             OutlinedTextField(
                 value = city,
                 onValueChange = { city = it },
-                label = { Text("Search for any loaction") },
-                singleLine = true
+                label = { Text("Search for any location") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
             )
+            Spacer(modifier = Modifier.width(8.dp))
             IconButton(
                 onClick = {
-                    viewModel.getData(city)
-                    keyboardController?.hide()
+                    if (city.isNotBlank()) {
+                        viewModel.getData(city)
+                        keyboardController?.hide()
+                    }
                 },
             ) {
                 Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
+            }
+            IconButton(
+                onClick = {
+                    isLoadingLocation = true
+                    locationError = null
 
+
+                    if (hasLocationPermission(context)) {
+                        getLocationAfterPermission(context, isLoadingLocation, locationError,
+                            onLoadingChange = { isLoadingLocation = it },
+                            onErrorChange = { locationError = it },
+                            onCityChange = { city = it },
+                            viewModel = viewModel
+                        )
+                    } else {
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    }
+                },
+            ) {
+                if (isLoadingLocation) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = "Get Current Location"
+                    )
+                }
             }
         }
         when (val result = weatherResult.value) {
             is NetworkResponse.Error -> {
-                Text(text = result.errorMessage)
+                Text(text = result.errorMessage, color = Color.Red)
             }
 
             NetworkResponse.Loading -> CircularProgressIndicator()
@@ -134,7 +200,7 @@ fun WeatherDetails(data: WeatherModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                    WeatherKeyVal("Humidity", data.current.humidity)
+                    WeatherKeyVal("Humidity", "${data.current.humidity}%")
                     WeatherKeyVal("Wind Speed", data.current.wind_kph + "km/h")
                 }
 
@@ -142,20 +208,19 @@ fun WeatherDetails(data: WeatherModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                    WeatherKeyVal("Humidity", data.current.uv)
-                    WeatherKeyVal("Wind Speed", data.current.precip_mm + "mm")
+                    WeatherKeyVal("UV Index", data.current.uv.toString())
+                    WeatherKeyVal("Precipitation", data.current.precip_mm + "mm")
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
-                    WeatherKeyVal("Local Time", data.location.localtime.split("")[1])
-                    WeatherKeyVal("Local Date", data.location.localtime.split("")[0])
+                    WeatherKeyVal("Local Time", data.location.localtime.split(" ")[1])
+                    WeatherKeyVal("Local Date", data.location.localtime.split(" ")[0])
                 }
             }
         }
-
     }
 }
 
@@ -165,4 +230,27 @@ fun WeatherKeyVal(key: String, value: String) {
         Text(text = value, fontWeight = FontWeight.Bold, fontSize = 24.sp)
         Text(text = key, fontWeight = FontWeight.SemiBold, color = Color.Gray)
     }
+}
+
+fun getLocationAfterPermission(
+    context: android.content.Context,
+    isLoading: Boolean,
+    error: String?,
+    onLoadingChange: (Boolean) -> Unit,
+    onErrorChange: (String?) -> Unit,
+    onCityChange: (String) -> Unit,
+    viewModel: WeatherViewModel
+) {
+    getCurrentLocation(
+        context = context,
+        onLocationReady = { latLon ->
+            onLoadingChange(false)
+            onCityChange(latLon)
+            viewModel.getData(latLon)
+        },
+        onError = { errorMsg ->
+            onLoadingChange(false)
+            onErrorChange(errorMsg)
+        }
+    )
 }
