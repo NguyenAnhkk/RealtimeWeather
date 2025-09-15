@@ -1,4 +1,4 @@
-package com.example.realtimeweather.utils
+package com.example.realtimeweather.permission
 
 import android.Manifest
 import android.content.Context
