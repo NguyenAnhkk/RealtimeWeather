@@ -1,6 +1,9 @@
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +37,10 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -45,10 +51,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -137,10 +148,9 @@ fun WeatherPage(
         }
     }
 
+
     DisposableEffect(Unit) {
-        onDispose {
-            speechRecognizerHelper.destroy()
-        }
+        onDispose { speechRecognizerHelper.destroy() }
     }
 
     LaunchedEffect(Unit) {
@@ -148,11 +158,8 @@ fun WeatherPage(
     }
 
     LaunchedEffect(locationError) {
-        locationError?.let { error ->
-            snackbarHostState.showSnackbar(
-                message = error,
-                duration = SnackbarDuration.Short
-            )
+        locationError?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Short)
             locationError = null
         }
     }
@@ -161,105 +168,127 @@ fun WeatherPage(
         AlertDialog(
             onDismissRequest = { speechPermissionState.showPermissionDialog.value = false },
             title = { Text("Microphone Permission Required") },
-            text = { Text("This app needs microphone access to use voice search") },
+            text = { Text("This app needs microphone access to use voice search.") },
             confirmButton = {
-                Button(
-                    onClick = {
-                        speechPermissionState.showPermissionDialog.value = false
-                        speechPermissionState.requestPermission()
-                    }
-                ) {
-                    Text("Grant Permission")
-                }
+                Button(onClick = {
+                    speechPermissionState.showPermissionDialog.value = false
+                    speechPermissionState.requestPermission()
+                }) { Text("Grant") }
             },
             dismissButton = {
-                Button(
-                    onClick = { speechPermissionState.showPermissionDialog.value = false }
-                ) {
-                    Text("Cancel")
-                }
+                Button(onClick = { speechPermissionState.showPermissionDialog.value = false }) { Text("Cancel") }
             }
         )
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Search Weather") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                    }
-                }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)
+                    )
+                )
             )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
-        ) {
-            WeatherSearchBar(
-                city = city,
-                onCityChange = { city = it },
-                onSearch = {
-                    if (city.isNotBlank()) {
-                        viewModel.getData(city)
-                        keyboardController?.hide()
-                        onSearchComplete()
-                    } else {
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
-                                message = "Please enter a location",
-                                duration = SnackbarDuration.Short
-                            )
+    ){
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            topBar = {
+                TopAppBar(
+                    title = { Text("Search Weather", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                         }
-                    }
-                },
-                onGetLocation = {
-                    isLoadingLocation = true
-                    locationError = null
-                    if (hasLocationPermission(context)) {
-                        getLocationAfterPermission(
-                            context, isLoadingLocation, locationError,
-                            onLoadingChange = { isLoadingLocation = it },
-                            onErrorChange = { locationError = it },
-                            onCityChange = { city = it },
-                            viewModel = viewModel,
-                            onComplete = onSearchComplete
-                        )
-                    } else {
-                        locationPermissionLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                            )
-                        )
-                    }
-                },
-                onMicClick = {
-                    if (speechPermissionState.permissionGranted.value) {
-                        if (isSpeechRecognitionActive) {
-                            speechRecognizerHelper.stopListening()
-                            isSpeechRecognitionActive = false
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            },
+            containerColor = Color.Transparent
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                WeatherSearchBar(
+                    city = city,
+                    onCityChange = { city = it },
+                    onSearch = {
+                        if (city.isNotBlank()) {
+                            viewModel.getData(city)
+                            keyboardController?.hide()
+                            onSearchComplete()
                         } else {
-                            isSpeechRecognitionActive = true
-                            city = ""
-                            speechRecognizerHelper.startListening()
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    message = "Please enter a location",
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
                         }
-                    } else {
-                        speechPermissionState.requestPermission()
-                    }
-                },
-                isLoadingLocation = isLoadingLocation,
-                isSpeechRecognitionActive = isSpeechRecognitionActive,
-                micEnabled = speechPermissionState.permissionGranted.value,
-                micScale = micScale
-            )
+                    },
+                    onGetLocation = {
+                        isLoadingLocation = true
+                        locationError = null
+                        if (hasLocationPermission(context)) {
+                            getLocationAfterPermission(
+                                context, isLoadingLocation, locationError,
+                                onLoadingChange = { isLoadingLocation = it },
+                                onErrorChange = { locationError = it },
+                                onCityChange = { city = it },
+                                viewModel = viewModel,
+                                onComplete = onSearchComplete
+                            )
+                        } else {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
+                    },
+                    onMicClick = {
+                        if (speechPermissionState.permissionGranted.value) {
+                            if (isSpeechRecognitionActive) {
+                                speechRecognizerHelper.stopListening()
+                                isSpeechRecognitionActive = false
+                            } else {
+                                isSpeechRecognitionActive = true
+                                city = ""
+                                speechRecognizerHelper.startListening()
+                            }
+                        } else {
+                            speechPermissionState.requestPermission()
+                        }
+                    },
+                    isLoadingLocation = isLoadingLocation,
+                    isSpeechRecognitionActive = isSpeechRecognitionActive,
+                    micEnabled = speechPermissionState.permissionGranted.value,
+                    micScale = micScale
+                )
+                AnimatedVisibility(visible = isSpeechRecognitionActive) {
+                    Text(
+                        text = "Listening...",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
+            }
         }
     }
+
 }
 
 @Composable
@@ -274,6 +303,10 @@ fun WeatherSearchBar(
     micEnabled: Boolean,
     micScale: Float = 1f
 ) {
+    val micScale by animateFloatAsState(
+        targetValue = if (isSpeechRecognitionActive) 1.2f else 1.0f,
+        animationSpec = tween(durationMillis = 300), label = "MicScaleAnimation"
+    )
     Card(
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(6.dp),
@@ -288,78 +321,75 @@ fun WeatherSearchBar(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedTextField(
+            TextField(
                 value = city,
-                onValueChange = { onCityChange(it) },
-                placeholder = { Text("Enter city name...") },
-                singleLine = true,
+                onValueChange = onCityChange,
                 modifier = Modifier.weight(1f),
+                placeholder = { Text("Enter city...", color = Color.White.copy(alpha = 0.7f)) },
+                textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                singleLine = true,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                ),
                 trailingIcon = {
                     IconButton(onClick = onSearch) {
                         Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search"
+                            Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = Color.White
                         )
                     }
                 }
             )
 
+
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Location button
             IconButton(
                 onClick = onGetLocation,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
             ) {
                 if (isLoadingLocation) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
+                        color = Color.White,
                         strokeWidth = 2.dp
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Default.LocationOn,
+                        Icons.Default.LocationOn,
                         contentDescription = "Get Location",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = Color.White
                     )
                 }
             }
 
+
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Mic button
             IconButton(
                 onClick = onMicClick,
                 modifier = Modifier
                     .size(48.dp)
+                    .scale(micScale)
+                    .clip(CircleShape)
                     .background(
-                        color = if (isSpeechRecognitionActive) Color.Red.copy(alpha = 0.3f)
-                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(12.dp)
+                        if (isSpeechRecognitionActive) Color.Red.copy(alpha = 0.7f)
+                        else MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
                     )
             ) {
-                if (isSpeechRecognitionActive) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(Color.Red, CircleShape)
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.outline_mic_24),
-                            contentDescription = "Listening...",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                } else {
-                    Icon(
-                        painter = painterResource(R.drawable.outline_mic_24),
-                        contentDescription = "Voice search",
-                        tint = if (micEnabled) MaterialTheme.colorScheme.primary else Color.Gray,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                Icon(
+                    painter = painterResource(R.drawable.outline_mic_24),
+                    contentDescription = if (isSpeechRecognitionActive) "Listening..." else "Voice Search",
+                    tint = Color.White
+                )
             }
         }
     }

@@ -71,7 +71,7 @@ fun HomeScreen(
             is NetworkResponse.Success -> {
                 WeatherDetails(
                     data = weatherResult.data,
-                    navController = navController // Truyền navController vào đây
+                    navController = navController
                 )
             }
 
@@ -123,7 +123,7 @@ fun WeatherDetails(
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 40.dp) // Thêm padding để tránh nút back
+            modifier = Modifier.padding(top = 40.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.LocationOn,
